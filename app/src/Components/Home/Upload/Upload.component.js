@@ -13,6 +13,7 @@ class UploadComponent extends Component {
     constructor() {
         super();
         let languages = [];
+        this.progressInterval = null
         window.configs.languages.map(e => {
             languages.push({
                 key: e.code,
@@ -161,6 +162,27 @@ class UploadComponent extends Component {
 
     };
 
+    // new function for increment
+    simulateXliffProgress = (type,progress) => {
+        console.log(progress)
+        switch (type) {
+            case "source":
+                this.setState({
+                    uploadSource: {
+                        progress: ++progress,
+                    },
+                });
+                break;
+            case "target":
+                this.setState({
+                    uploadTarget: {
+                        progress: ++progress,
+                    },
+                });
+                break;
+        }
+    };
+
 
     onDropTarget = async (files) => {
         if(!files.length){
@@ -172,19 +194,37 @@ class UploadComponent extends Component {
             });
         }
         const onProgress = progressEvent => {
+            const progressCalculated = ((progressEvent.loaded * 100) / (progressEvent.total));
             this.setState({
                 uploadTarget: {
-                    progress: ((progressEvent.loaded * 100) / progressEvent.total),
-                    start: true,
+                    progress: progressCalculated >= 70 ? 70 : progressCalculated,
                     status: 'progress',
                     size: Math.floor((progressEvent.total) / 1000),
                     name: files[0].name
                 },
             })
         };
+
         try {
             const uploadResult = await httpUpload(files[0], onProgress);
             if(!uploadResult.errors || !uploadResult.data.errors){
+                // new code from here
+                setTimeout( () => {
+                    this.progressInterval = setInterval( () => {
+                        if(this.state.uploadTarget.progress > 98){
+                            clearInterval(this.progressInterval);
+                        }else{
+                            this.simulateXliffProgress("target",this.state.uploadTarget.progress);
+                        }
+                    }, 200);
+                },8000);
+
+                const conversionResult = await httpConversion({
+                    file_name: uploadResult.data[0].name,
+                    source_lang: this.state.targetLang,
+                    target_lang: this.state.sourceLang
+                });
+                // moved at the bottom because now the component will be reset after xlif conversion
                 this.setState({
                     uploadTarget: {
                         start: false,
@@ -197,11 +237,8 @@ class UploadComponent extends Component {
                     },
                 });
 
-                const conversionResult = await httpConversion({
-                    file_name: uploadResult.data[0].name,
-                    source_lang: this.state.targetLang,
-                    target_lang: this.state.sourceLang
-                });
+                clearInterval(this.progressInterval);
+
                 if(conversionResult.data.code !== 1){
                     throw "conversion"
                 }
